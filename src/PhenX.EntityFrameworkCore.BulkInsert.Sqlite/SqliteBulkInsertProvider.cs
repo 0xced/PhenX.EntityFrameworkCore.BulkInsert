@@ -125,11 +125,11 @@ internal class SqliteBulkInsertProvider(ILogger<SqliteBulkInsertProvider>? logge
     }
 
     /// <inheritdoc />
-    protected override async Task BulkInsert<T>(
+    protected override async Task<long> BulkInsert<T>(
         bool sync,
         DbContext context,
         TableMetadata tableInfo,
-        IEnumerable<T> entities,
+        IAsyncEnumerable<T> entities,
         string tableName,
         IReadOnlyList<ColumnMetadata> columns,
         BulkInsertOptions options,
@@ -149,7 +149,7 @@ internal class SqliteBulkInsertProvider(ILogger<SqliteBulkInsertProvider>? logge
         DbCommand? insertCommand = null;
         try
         {
-            foreach (var chunk in entities.Chunk(batchSize))
+            await foreach (var chunk in entities.Chunk(batchSize).WithCancellation(ctk))
             {
                 // Full chunks
                 if (chunk.Length == batchSize)
@@ -196,6 +196,8 @@ internal class SqliteBulkInsertProvider(ILogger<SqliteBulkInsertProvider>? logge
                 await insertCommand.DisposeAsync();
             }
         }
+
+        return rowsCopied;
     }
 
     private static async Task ExecuteCommand(bool sync, DbCommand insertCommand, CancellationToken ctk)

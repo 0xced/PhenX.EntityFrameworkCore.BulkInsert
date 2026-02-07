@@ -25,7 +25,7 @@ internal abstract class BulkInsertProviderBase<TDialect, TOptions>(ILogger? logg
         bool sync,
         DbContext context,
         TableMetadata tableInfo,
-        IEnumerable<T> entities,
+        IAsyncEnumerable<T> entities,
         TOptions options,
         OnConflictOptions<T>? onConflict,
         [EnumeratorCancellation] CancellationToken ctk) where T : class
@@ -72,16 +72,11 @@ internal abstract class BulkInsertProviderBase<TDialect, TOptions>(ILogger? logg
         bool sync,
         DbContext context,
         TableMetadata tableInfo,
-        IEnumerable<T> entities,
+        IAsyncEnumerable<T> entities,
         TOptions options,
         OnConflictOptions<T>? onConflict,
         CancellationToken ctk) where T : class
     {
-        if (entities.TryGetNonEnumeratedCount(out var count) && count == 0)
-        {
-            throw new InvalidOperationException("No entities to insert.");
-        }
-
         using var activity = Telemetry.ActivitySource.StartActivity("BulkInsert");
         activity?.AddTag("tableName", tableInfo.TableName);
         activity?.AddTag("synchronous", sync);
@@ -129,7 +124,7 @@ internal abstract class BulkInsertProviderBase<TDialect, TOptions>(ILogger? logg
         bool sync,
         DbContext context,
         TableMetadata tableInfo,
-        IEnumerable<T> entities,
+        IAsyncEnumerable<T> entities,
         TOptions options,
         bool tempTableRequired,
         CancellationToken ctk) where T : class
@@ -144,18 +139,22 @@ internal abstract class BulkInsertProviderBase<TDialect, TOptions>(ILogger? logg
         activity?.AddTag("tempTable", tempTableRequired);
         activity?.AddTag("synchronous", sync);
 
-        await BulkInsert(sync, context, tableInfo, entities, tableName, columns, options, ctk);
+        var rowsCopied = await BulkInsert(sync, context, tableInfo, entities, tableName, columns, options, ctk);
+        if (rowsCopied == 0)
+        {
+            throw new InvalidOperationException("No entities to insert.");
+        }
         return tableName;
     }
 
     /// <summary>
     /// The main bulk insert method: will insert either in a temp table or directly in the target table.
     /// </summary>
-    protected abstract Task BulkInsert<T>(
+    protected abstract Task<long> BulkInsert<T>(
         bool sync,
         DbContext context,
         TableMetadata tableInfo,
-        IEnumerable<T> entities,
+        IAsyncEnumerable<T> entities,
         string tableName,
         IReadOnlyList<ColumnMetadata> columns,
         TOptions options,

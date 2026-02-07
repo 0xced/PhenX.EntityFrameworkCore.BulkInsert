@@ -37,11 +37,11 @@ internal class PostgreSqlBulkInsertProvider(ILogger<PostgreSqlBulkInsertProvider
     };
 
     /// <inheritdoc />
-    protected override async Task BulkInsert<T>(
+    protected override async Task<long> BulkInsert<T>(
         bool sync,
         DbContext context,
         TableMetadata tableInfo,
-        IEnumerable<T> entities,
+        IAsyncEnumerable<T> entities,
         string tableName,
         IReadOnlyList<ColumnMetadata> columns,
         PostgreSqlBulkInsertOptions options,
@@ -59,66 +59,92 @@ internal class PostgreSqlBulkInsertProvider(ILogger<PostgreSqlBulkInsertProvider
         var columnTypes = columns.Select(c => GetPostgreSqlType(c, options)).ToArray();
 
         long rowsCopied = 0;
-        foreach (var entity in entities)
+        var enumerator = entities.GetAsyncEnumerator(ctk);
+        try
         {
-            if (sync)
+            while (true)
             {
-                // ReSharper disable once MethodHasAsyncOverloadWithCancellation
-                writer.StartRow();
-            }
-            else
-            {
-                await writer.StartRowAsync(ctk);
-            }
+                ctk.ThrowIfCancellationRequested();
+                var more = sync ? enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult() : await enumerator.MoveNextAsync();
+                if (!more)
+                {
+                    break;
+                }
 
-            for (var columnIndex = 0; columnIndex < columns.Count; columnIndex++)
-            {
-                var value = columns[columnIndex].GetValue(entity, options);
-
-                // Get the actual type, so that the writer can do the conversation to the target type automatically.
-                var type = columnTypes[columnIndex];
+                var entity = enumerator.Current;
 
                 if (sync)
                 {
-                    if (type != null)
-                    {
-                        // ReSharper disable once MethodHasAsyncOverloadWithCancellation
-                        writer.Write(value, type.Value);
-                    }
-                    else
-                    {
-                        // ReSharper disable once MethodHasAsyncOverloadWithCancellation
-                        writer.Write(value);
-                    }
+                    // ReSharper disable once MethodHasAsyncOverloadWithCancellation
+                    writer.StartRow();
                 }
                 else
                 {
-                    if (type != null)
+                    await writer.StartRowAsync(ctk);
+                }
+
+                for (var columnIndex = 0; columnIndex < columns.Count; columnIndex++)
+                {
+                    var value = columns[columnIndex].GetValue(entity, options);
+
+                    // Get the actual type, so that the writer can do the conversation to the target type automatically.
+                    var type = columnTypes[columnIndex];
+
+                    if (sync)
                     {
-                        await writer.WriteAsync(value, type.Value, ctk);
+                        if (type != null)
+                        {
+                            // ReSharper disable once MethodHasAsyncOverloadWithCancellation
+                            writer.Write(value, type.Value);
+                        }
+                        else
+                        {
+                            // ReSharper disable once MethodHasAsyncOverloadWithCancellation
+                            writer.Write(value);
+                        }
                     }
                     else
                     {
-                        await writer.WriteAsync(value, ctk);
+                        if (type != null)
+                        {
+                            await writer.WriteAsync(value, type.Value, ctk);
+                        }
+                        else
+                        {
+                            await writer.WriteAsync(value, ctk);
+                        }
                     }
                 }
+
+                options.HandleOnProgress(ref rowsCopied);
             }
 
-            options.HandleOnProgress(ref rowsCopied);
+            if (sync)
+            {
+                // ReSharper disable once MethodHasAsyncOverloadWithCancellation
+                writer.Complete();
+                // ReSharper disable once MethodHasAsyncOverload
+                writer.Dispose();
+            }
+            else
+            {
+                await writer.CompleteAsync(ctk);
+                await writer.DisposeAsync();
+            }
+        }
+        finally
+        {
+            if (sync)
+            {
+                enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
+            else
+            {
+                await enumerator.DisposeAsync();
+            }
         }
 
-        if (sync)
-        {
-            // ReSharper disable once MethodHasAsyncOverloadWithCancellation
-            writer.Complete();
-            // ReSharper disable once MethodHasAsyncOverload
-            writer.Dispose();
-        }
-        else
-        {
-            await writer.CompleteAsync(ctk);
-            await writer.DisposeAsync();
-        }
+        return rowsCopied;
     }
 
     private static NpgsqlDbType? GetPostgreSqlType(ColumnMetadata column, PostgreSqlBulkInsertOptions options)

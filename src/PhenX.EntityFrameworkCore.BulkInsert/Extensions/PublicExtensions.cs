@@ -24,7 +24,7 @@ public static partial class PublicExtensions
     {
         var (provider, context, options) = InitProvider(dbSet, configure);
 
-        var enumerable = provider.BulkInsertReturnEntities(sync, context, dbSet.GetDbContext().GetTableInfo<TEntity>(), entities, options, onConflict, ctk);
+        var enumerable = provider.BulkInsertReturnEntities(sync, context, dbSet.GetDbContext().GetTableInfo<TEntity>(), entities.ToAsyncEnumerable(), options, onConflict, ctk);
 
         var result = new List<TEntity>();
         await foreach (var item in enumerable.WithCancellation(ctk))
@@ -32,7 +32,7 @@ public static partial class PublicExtensions
             result.Add(item);
         }
 
-        return result;
+        return result.Count == 0 ? throw new InvalidOperationException("No entities to insert.") : result;
     }
 
     private static DbContext GetDbContext<T>(this DbSet<T> dbSet) where T : class

@@ -18,7 +18,7 @@ internal interface IBulkInsertProvider
         bool sync,
         DbContext context,
         TableMetadata tableInfo,
-        IEnumerable<T> entities,
+        IAsyncEnumerable<T> entities,
         BulkInsertOptions options,
         OnConflictOptions<T>? onConflict = null,
         CancellationToken ctk = default
@@ -31,7 +31,7 @@ internal interface IBulkInsertProvider
         bool sync,
         DbContext context,
         TableMetadata tableInfo,
-        IEnumerable<T> entities,
+        IAsyncEnumerable<T> entities,
         BulkInsertOptions options,
         OnConflictOptions<T>? onConflict = null,
         CancellationToken ctk = default

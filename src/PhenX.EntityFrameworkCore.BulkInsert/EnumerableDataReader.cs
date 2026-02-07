@@ -1,4 +1,5 @@
-using System.Data;
+using System.Collections;
+using System.Data.Common;
 
 using PhenX.EntityFrameworkCore.BulkInsert.Metadata;
 using PhenX.EntityFrameworkCore.BulkInsert.Options;
@@ -6,11 +7,11 @@ using PhenX.EntityFrameworkCore.BulkInsert.Options;
 namespace PhenX.EntityFrameworkCore.BulkInsert;
 
 internal sealed class EnumerableDataReader<T>(
-    IEnumerable<T> rows,
+    IAsyncEnumerable<T> rows,
     IReadOnlyList<ColumnMetadata> columns,
-    BulkInsertOptions options) : IDataReader
+    BulkInsertOptions options) : DbDataReader
 {
-    private readonly IEnumerator<T> _enumerator = rows.GetEnumerator();
+    private readonly IAsyncEnumerator<T> _enumerator = rows.GetAsyncEnumerator();
     private readonly Dictionary<string, int> _ordinalMap =
         columns
             .Select((c, i) => (Column: c, Index: i))
@@ -18,8 +19,9 @@ internal sealed class EnumerableDataReader<T>(
                 p => p.Column.PropertyName,
                 p => p.Index
             );
+    private int _recordsAffected;
 
-    public object GetValue(int i)
+    public override object GetValue(int i)
     {
         var current = _enumerator.Current;
         if (current == null)
@@ -27,10 +29,10 @@ internal sealed class EnumerableDataReader<T>(
             return DBNull.Value;
         }
 
-        return columns[i].GetValue(current, options)!;
+        return columns[i].GetValue(current, options);
     }
 
-    public int GetValues(object[] values)
+    public override int GetValues(object[] values)
     {
         var current = _enumerator.Current;
         if (current == null)
@@ -40,77 +42,100 @@ internal sealed class EnumerableDataReader<T>(
 
         for (var i = 0; i < columns.Count; i++)
         {
-            values[i] = columns[i].GetValue(current, options)!;
+            values[i] = columns[i].GetValue(current, options);
         }
 
         return columns.Count;
     }
 
-    public bool Read() => _enumerator.MoveNext();
-
-    public Type GetFieldType(int i) => columns[i].ClrType;
-
-    public int GetOrdinal(string name) => _ordinalMap.GetValueOrDefault(name, -1);
-
-    public int FieldCount => columns.Count;
-
-    public int Depth => 0;
-
-    public int RecordsAffected => 0;
-
-    public bool IsClosed => false;
-
-
-    public void Close()
+    public override bool Read()
     {
+        var moreRows = _enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult();
+        if (moreRows)
+        {
+            _recordsAffected++;
+        }
+        return moreRows;
     }
 
-    public void Dispose()
+    public override async Task<bool> ReadAsync(CancellationToken cancellationToken)
     {
-        _enumerator.Dispose();
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var moreRows = await _enumerator.MoveNextAsync();
+        if (moreRows)
+        {
+            _recordsAffected++;
+        }
+        return moreRows;
     }
 
-    public DataTable GetSchemaTable() => throw new NotImplementedException();
+    public override IEnumerator GetEnumerator() => throw new NotImplementedException();
 
-    public bool NextResult() => throw new NotImplementedException();
+    public override Type GetFieldType(int i) => columns[i].ClrType;
 
-    public bool IsDBNull(int i) => GetValue(i) is DBNull;
+    public override int GetOrdinal(string name) => _ordinalMap.GetValueOrDefault(name, -1);
 
-    public object this[int i] => throw new NotImplementedException();
+    public override int FieldCount => columns.Count;
 
-    public object this[string name] => throw new NotImplementedException();
+    public override bool HasRows => throw new NotImplementedException();
 
-    public string GetString(int i) => throw new NotImplementedException();
+    public override int Depth => 0;
 
-    public bool GetBoolean(int i) => throw new NotImplementedException();
+    public override int RecordsAffected => _recordsAffected;
 
-    public byte GetByte(int i) => throw new NotImplementedException();
+    public override bool IsClosed => false;
 
-    public long GetBytes(int i, long fieldOffset, byte[]? buffer, int bufferoffset, int length) => throw new NotImplementedException();
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+    }
 
-    public char GetChar(int i) => throw new NotImplementedException();
+    public override async ValueTask DisposeAsync()
+    {
+        await _enumerator.DisposeAsync();
+    }
 
-    public long GetChars(int i, long fieldoffset, char[]? buffer, int bufferoffset, int length) => throw new NotImplementedException();
+    public override bool NextResult() => throw new NotImplementedException();
 
-    public IDataReader GetData(int i) => throw new NotImplementedException();
+    public override bool IsDBNull(int i) => GetValue(i) is DBNull;
 
-    public string GetDataTypeName(int i) => throw new NotImplementedException();
+    public override object this[int i] => throw new NotImplementedException();
 
-    public DateTime GetDateTime(int i) => throw new NotImplementedException();
+    public override object this[string name] => throw new NotImplementedException();
 
-    public decimal GetDecimal(int i) => throw new NotImplementedException();
+    public override string GetString(int i) => throw new NotImplementedException();
 
-    public double GetDouble(int i) => throw new NotImplementedException();
+    public override bool GetBoolean(int i) => throw new NotImplementedException();
 
-    public float GetFloat(int i) => throw new NotImplementedException();
+    public override byte GetByte(int i) => throw new NotImplementedException();
 
-    public Guid GetGuid(int i) => throw new NotImplementedException();
+    public override long GetBytes(int i, long fieldOffset, byte[]? buffer, int bufferoffset, int length) => throw new NotImplementedException();
 
-    public short GetInt16(int i) => throw new NotImplementedException();
+    public override char GetChar(int i) => throw new NotImplementedException();
 
-    public int GetInt32(int i) => throw new NotImplementedException();
+    public override long GetChars(int i, long fieldoffset, char[]? buffer, int bufferoffset, int length) => throw new NotImplementedException();
 
-    public long GetInt64(int i) => throw new NotImplementedException();
+    public override string GetDataTypeName(int i) => throw new NotImplementedException();
 
-    public string GetName(int i) => throw new NotImplementedException();
+    public override DateTime GetDateTime(int i) => throw new NotImplementedException();
+
+    public override decimal GetDecimal(int i) => throw new NotImplementedException();
+
+    public override double GetDouble(int i) => throw new NotImplementedException();
+
+    public override float GetFloat(int i) => throw new NotImplementedException();
+
+    public override Guid GetGuid(int i) => throw new NotImplementedException();
+
+    public override short GetInt16(int i) => throw new NotImplementedException();
+
+    public override int GetInt32(int i) => throw new NotImplementedException();
+
+    public override long GetInt64(int i) => throw new NotImplementedException();
+
+    public override string GetName(int i) => throw new NotImplementedException();
 }

@@ -36,7 +36,7 @@ internal class OracleBulkInsertProvider(ILogger<OracleBulkInsertProvider>? logge
         bool sync,
         DbContext context,
         TableMetadata tableInfo,
-        IEnumerable<T> entities,
+        IAsyncEnumerable<T> entities,
         OracleBulkInsertOptions options,
         OnConflictOptions<T>? onConflict,
         CancellationToken ctk)
@@ -45,11 +45,11 @@ internal class OracleBulkInsertProvider(ILogger<OracleBulkInsertProvider>? logge
     }
 
     /// <inheritdoc />
-    protected override Task BulkInsert<T>(
+    protected override Task<long> BulkInsert<T>(
         bool sync,
         DbContext context,
         TableMetadata tableInfo,
-        IEnumerable<T> entities,
+        IAsyncEnumerable<T> entities,
         string tableName,
         IReadOnlyList<ColumnMetadata> columns,
         OracleBulkInsertOptions options,
@@ -100,7 +100,7 @@ internal class OracleBulkInsertProvider(ILogger<OracleBulkInsertProvider>? logge
 
         bulkCopy.WriteToServer(dataReader);
 
-        return Task.CompletedTask;
+        return Task.FromResult<long>(dataReader.RecordsAffected);
     }
 
     /// <inheritdoc />

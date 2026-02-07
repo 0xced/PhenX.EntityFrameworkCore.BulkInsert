@@ -26,7 +26,7 @@ internal abstract class BulkInsertProviderUntyped<TDialect, TOptions> : IBulkIns
         bool sync,
         DbContext context,
         TableMetadata tableInfo,
-        IEnumerable<T> entities,
+        IAsyncEnumerable<T> entities,
         BulkInsertOptions options,
         OnConflictOptions<T>? onConflict,
         CancellationToken ctk) where T : class
@@ -34,11 +34,6 @@ internal abstract class BulkInsertProviderUntyped<TDialect, TOptions> : IBulkIns
         if (options is not TOptions providerOptions)
         {
             throw new InvalidOperationException($"Invalid options type: {options.GetType().Name}. Expected: {typeof(TOptions).Name}");
-        }
-
-        if (entities.TryGetNonEnumeratedCount(out var count) && count == 0)
-        {
-            throw new InvalidOperationException("No entities to insert.");
         }
 
         return BulkInsertReturnEntities(sync, context, tableInfo, entities, providerOptions, onConflict, ctk);
@@ -48,7 +43,7 @@ internal abstract class BulkInsertProviderUntyped<TDialect, TOptions> : IBulkIns
         bool sync,
         DbContext context,
         TableMetadata tableInfo,
-        IEnumerable<T> entities,
+        IAsyncEnumerable<T> entities,
         TOptions options,
         OnConflictOptions<T>? onConflict,
         CancellationToken ctk) where T : class;
@@ -57,7 +52,7 @@ internal abstract class BulkInsertProviderUntyped<TDialect, TOptions> : IBulkIns
         bool sync,
         DbContext context,
         TableMetadata tableInfo,
-        IEnumerable<T> entities,
+        IAsyncEnumerable<T> entities,
         BulkInsertOptions options,
         OnConflictOptions<T>? onConflict,
         CancellationToken ctk) where T : class
@@ -67,11 +62,6 @@ internal abstract class BulkInsertProviderUntyped<TDialect, TOptions> : IBulkIns
             throw new InvalidOperationException($"Invalid options type: {options.GetType().Name}. Expected: {typeof(TOptions).Name}");
         }
 
-        if (entities.TryGetNonEnumeratedCount(out var count) && count == 0)
-        {
-            throw new InvalidOperationException("No entities to insert.");
-        }
-
         return BulkInsert(sync, context, tableInfo, entities, providerOptions, onConflict, ctk);
     }
 
@@ -79,7 +69,7 @@ internal abstract class BulkInsertProviderUntyped<TDialect, TOptions> : IBulkIns
         bool sync,
         DbContext context,
         TableMetadata tableInfo,
-        IEnumerable<T> entities,
+        IAsyncEnumerable<T> entities,
         TOptions options,
         OnConflictOptions<T>? onConflict,
         CancellationToken ctk) where T : class;

@@ -107,6 +107,22 @@ public static partial class PublicExtensions
         where T : class
         where TOptions : BulkInsertOptions
     {
+        return ExecuteBulkInsertReturnEnumerableAsync(dbSet, entities.ToAsyncEnumerable(), configure, onConflict, cancellationToken);
+    }
+
+    /// <summary>
+    /// Executes a bulk insert operation returning the inserted/updated entities, from the DbSet, with provider specific options.
+    /// </summary>
+    public static IAsyncEnumerable<T> ExecuteBulkInsertReturnEnumerableAsync<T, TOptions>(
+        this DbSet<T> dbSet,
+        IAsyncEnumerable<T> entities,
+        Action<TOptions> configure,
+        OnConflictOptions<T>? onConflict = null,
+        CancellationToken cancellationToken = default
+    )
+        where T : class
+        where TOptions : BulkInsertOptions
+    {
         var (provider, context, options) = InitProvider(dbSet, configure);
 
         return provider.BulkInsertReturnEntities(false, context, dbSet.GetDbContext().GetTableInfo<T>(), entities,
@@ -148,6 +164,22 @@ public static partial class PublicExtensions
     public static async Task ExecuteBulkInsertAsync<T, TOptions>(
         this DbSet<T> dbSet,
         IEnumerable<T> entities,
+        Action<TOptions> configure,
+        OnConflictOptions<T>? onConflict = null,
+        CancellationToken cancellationToken = default
+    )
+        where T : class
+        where TOptions : BulkInsertOptions
+    {
+        await ExecuteBulkInsertAsync(dbSet, entities.ToAsyncEnumerable(), configure, onConflict, cancellationToken);
+    }
+
+    /// <summary>
+    /// Executes a bulk insert operation without returning the inserted/updated entities, from the DbSet, with provider specific options.
+    /// </summary>
+    public static async Task ExecuteBulkInsertAsync<T, TOptions>(
+        this DbSet<T> dbSet,
+        IAsyncEnumerable<T> entities,
         Action<TOptions> configure,
         OnConflictOptions<T>? onConflict = null,
         CancellationToken cancellationToken = default
@@ -204,7 +236,7 @@ public static partial class PublicExtensions
     {
         var (provider, context, options) = InitProvider(dbSet, configure);
 
-        provider.BulkInsert(true, context, dbSet.GetDbContext().GetTableInfo<T>(), entities, options, onConflict)
+        provider.BulkInsert(true, context, dbSet.GetDbContext().GetTableInfo<T>(), entities.ToAsyncEnumerable(), options, onConflict)
             .GetAwaiter().GetResult();
     }
 

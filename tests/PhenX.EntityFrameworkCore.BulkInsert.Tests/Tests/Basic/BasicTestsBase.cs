@@ -1,8 +1,11 @@
 using FluentAssertions;
 using FluentAssertions.Extensions;
 
+using Microsoft.EntityFrameworkCore;
+
 using PhenX.EntityFrameworkCore.BulkInsert.Enums;
 using PhenX.EntityFrameworkCore.BulkInsert.Extensions;
+using PhenX.EntityFrameworkCore.BulkInsert.Options;
 using PhenX.EntityFrameworkCore.BulkInsert.SqlServer;
 using PhenX.EntityFrameworkCore.BulkInsert.Tests.DbContainer;
 using PhenX.EntityFrameworkCore.BulkInsert.Tests.DbContext;
@@ -45,6 +48,32 @@ public abstract class BasicTestsBase<TDbContext>(IDbContextFactory dbContextFact
         // Assert
         insertedEntities.Should().BeEquivalentTo(entities,
             o => o.RespectingRuntimeTypes().Excluding(e => e.Id));
+    }
+
+    private async IAsyncEnumerable<TestEntity> AsyncEntities()
+    {
+        yield return new TestEntity { TestRun = _run, Name = $"{_run}_Entity1" };
+        await Task.Yield();
+        yield return new TestEntity { TestRun = _run, Name = $"{_run}_Entity2" };
+    }
+
+    [SkippableFact]
+    public async Task InsertsAsyncEntities()
+    {
+        // Arrange
+        var entities = AsyncEntities();
+
+        // Act
+        await _context.TestEntities.ExecuteBulkInsertAsync<TestEntity, BulkInsertOptions>(entities, configure: _ => { });
+
+        // Assert
+        var insertedEntities = await _context.TestEntities.Where(x => x.TestRun == _run).ToListAsync();
+        var expectedEntities = new List<TestEntity>
+        {
+            new() { TestRun = _run, Name = $"{_run}_Entity1" },
+            new() { TestRun = _run, Name = $"{_run}_Entity2" },
+        };
+        insertedEntities.Should().BeEquivalentTo(expectedEntities, o => o.RespectingRuntimeTypes().Excluding(e => e.Id));
     }
 
     [SkippableTheory]

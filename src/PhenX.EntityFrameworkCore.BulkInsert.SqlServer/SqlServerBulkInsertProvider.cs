@@ -26,11 +26,11 @@ internal class SqlServerBulkInsertProvider(ILogger<SqlServerBulkInsertProvider>?
     };
 
     /// <inheritdoc />
-    protected override async Task BulkInsert<T>(
+    protected override async Task<long> BulkInsert<T>(
         bool sync,
         DbContext context,
         TableMetadata tableInfo,
-        IEnumerable<T> entities,
+        IAsyncEnumerable<T> entities,
         string tableName,
         IReadOnlyList<ColumnMetadata> columns,
         SqlServerBulkInsertOptions options,
@@ -90,5 +90,7 @@ internal class SqlServerBulkInsertProvider(ILogger<SqlServerBulkInsertProvider>?
         {
             await bulkCopy.WriteToServerAsync(dataReader, ctk);
         }
+
+        return dataReader.RecordsAffected;
     }
 }
