@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Data.Common;
 using System.Text;
 
@@ -70,7 +71,7 @@ internal class SqliteBulkInsertProvider(ILogger<SqliteBulkInsertProvider>? logge
     private static DbCommand GetInsertCommand(
         DbContext context,
         string tableName,
-        IReadOnlyList<ColumnMetadata> columns,
+        ColumnMetadata[] columns,
         SqliteType[] columnTypes,
         StringBuilder sb,
         int batchSize)
@@ -94,7 +95,7 @@ internal class SqliteBulkInsertProvider(ILogger<SqliteBulkInsertProvider>? logge
             sb.Append('(');
 
             var columnIndex = 0;
-            for (var index = 0; index < columns.Count; index++)
+            for (var index = 0; index < columns.Length; index++)
             {
                 var parameterName = $"@p{p++}";
                 command.Parameters.Add(new SqliteParameter(parameterName, columnTypes[columnIndex]));
@@ -138,13 +139,102 @@ internal class SqliteBulkInsertProvider(ILogger<SqliteBulkInsertProvider>? logge
     {
         var batchSize = Math.Min(options.BatchSize, MaxParams / columns.Count);
 
-        long rowsCopied = 0;
-
         // The StringBuilder can be reused between the batches.
         var sb = new StringBuilder();
 
         var columnList = tableInfo.GetColumns(options.CopyGeneratedColumns);
         var columnTypes = columnList.Select(GetSqliteType).ToArray();
+
+
+        if (sync)
+        {
+            return BulkInsertSync(batchSize, context, sb, columnList, columnTypes, new SyncEnumerable<T>(entities, ctk), tableName, columns, options, ctk);
+        }
+
+        return await BulkInsertAsync(batchSize, context, sb, columnList, columnTypes, entities, tableName, columns, options, ctk);
+    }
+
+    private static long BulkInsertSync<T>(
+        int batchSize,
+        DbContext context,
+        StringBuilder sb,
+        ColumnMetadata[] columnList,
+        SqliteType[] columnTypes,
+        IEnumerable<T> entities,
+        string tableName,
+        IReadOnlyList<ColumnMetadata> columns,
+        BulkInsertOptions options,
+        CancellationToken ctk) where T : class
+    {
+        long rowsCopied = 0;
+
+        DbCommand? insertCommand = null;
+        try
+        {
+            foreach (var chunk in entities.Chunk(batchSize))
+            {
+                ctk.ThrowIfCancellationRequested();
+
+                // Full chunks
+                if (chunk.Length == batchSize)
+                {
+                    insertCommand ??=
+                        GetInsertCommand(
+                            context,
+                            tableName,
+                            columnList,
+                            columnTypes,
+                            sb,
+                            batchSize);
+
+                    FillValues(chunk, insertCommand.Parameters, columns, options);
+                    insertCommand.ExecuteNonQuery();
+                }
+                // Last chunk
+                else
+                {
+                    using var partialInsertCommand =
+                        GetInsertCommand(
+                            context,
+                            tableName,
+                            columnList,
+                            columnTypes,
+                            sb,
+                            chunk.Length);
+
+                    FillValues(chunk, partialInsertCommand.Parameters, columns, options);
+                    partialInsertCommand.ExecuteNonQuery();
+                }
+
+                // Notify progress after each chunk
+                for (var i = 0; i < chunk.Length; i++)
+                {
+                    options.HandleOnProgress(ref rowsCopied);
+                }
+            }
+        }
+        finally
+        {
+            insertCommand?.Dispose();
+        }
+
+        return rowsCopied;
+    }
+
+    private static async Task<long> BulkInsertAsync<T>(
+        int batchSize,
+        DbContext context,
+        StringBuilder sb,
+        ColumnMetadata[] columnList,
+        SqliteType[] columnTypes,
+        IAsyncEnumerable<T> entities,
+        string tableName,
+        IReadOnlyList<ColumnMetadata> columns,
+        BulkInsertOptions options,
+        CancellationToken ctk
+    ) where T : class
+    {
+        long rowsCopied = 0;
 
         DbCommand? insertCommand = null;
         try
@@ -164,7 +254,7 @@ internal class SqliteBulkInsertProvider(ILogger<SqliteBulkInsertProvider>? logge
                             batchSize);
 
                     FillValues(chunk, insertCommand.Parameters, columns, options);
-                    await ExecuteCommand(sync, insertCommand, ctk);
+                    await insertCommand.ExecuteNonQueryAsync(ctk);
                 }
                 // Last chunk
                 else
@@ -179,7 +269,7 @@ internal class SqliteBulkInsertProvider(ILogger<SqliteBulkInsertProvider>? logge
                             chunk.Length);
 
                     FillValues(chunk, partialInsertCommand.Parameters, columns, options);
-                    await ExecuteCommand(sync, partialInsertCommand, ctk);
+                    await partialInsertCommand.ExecuteNonQueryAsync(ctk);
                 }
 
                 // Notify progress after each chunk
@@ -198,19 +288,6 @@ internal class SqliteBulkInsertProvider(ILogger<SqliteBulkInsertProvider>? logge
         }
 
         return rowsCopied;
-    }
-
-    private static async Task ExecuteCommand(bool sync, DbCommand insertCommand, CancellationToken ctk)
-    {
-        if (sync)
-        {
-            // ReSharper disable once MethodHasAsyncOverloadWithCancellation
-            insertCommand.ExecuteNonQuery();
-        }
-        else
-        {
-            await insertCommand.ExecuteNonQueryAsync(ctk);
-        }
     }
 
     private static void FillValues<T>(
@@ -236,3 +313,26 @@ internal class SqliteBulkInsertProvider(ILogger<SqliteBulkInsertProvider>? logge
     }
 }
 
+internal class SyncEnumerable<T>(IAsyncEnumerable<T> enumerable, CancellationToken ctk) : IEnumerable<T>
+{
+    public IEnumerator<T> GetEnumerator() => new SyncEnumerator<T>(enumerable.GetAsyncEnumerator(ctk), ctk);
+
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+}
+
+internal class SyncEnumerator<T>(IAsyncEnumerator<T> enumerator, CancellationToken ctk) : IEnumerator<T>
+{
+    public bool MoveNext()
+    {
+        ctk.ThrowIfCancellationRequested();
+        return enumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult();
+    }
+
+    public void Reset() => throw new NotImplementedException();
+
+    public T Current => enumerator.Current;
+
+    object? IEnumerator.Current => Current;
+
+    public void Dispose() => enumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+}
