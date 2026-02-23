@@ -15,7 +15,7 @@ using PhenX.EntityFrameworkCore.BulkInsert.Metadata;
 namespace PhenX.EntityFrameworkCore.BulkInsert.PostgreSql;
 
 [UsedImplicitly]
-internal class PostgreSqlBulkInsertProvider(ILogger<PostgreSqlBulkInsertProvider>? logger) : BulkInsertProviderBase<PostgreSqlDialectBuilder, PostgreSqlBulkInsertOptions>(logger)
+internal partial class PostgreSqlBulkInsertProvider(ILogger<PostgreSqlBulkInsertProvider>? logger) : BulkInsertProviderBase<PostgreSqlDialectBuilder, PostgreSqlBulkInsertOptions>(logger)
 {
     //language=sql
     /// <inheritdoc />
@@ -37,8 +37,8 @@ internal class PostgreSqlBulkInsertProvider(ILogger<PostgreSqlBulkInsertProvider
     };
 
     /// <inheritdoc />
-    protected override async Task BulkInsert<T>(
-        bool sync,
+    [Zomp.SyncMethodGenerator.CreateSyncVersion(PreserveCancellationToken = true)]
+    protected override async Task BulkInsertAsync<T>(
         DbContext context,
         TableMetadata tableInfo,
         IEnumerable<T> entities,
@@ -50,10 +50,7 @@ internal class PostgreSqlBulkInsertProvider(ILogger<PostgreSqlBulkInsertProvider
         var connection = (NpgsqlConnection)context.Database.GetDbConnection();
         var command = GetBinaryImportCommand(columns, tableName);
 
-        var writer = sync
-            // ReSharper disable once MethodHasAsyncOverloadWithCancellation
-            ? connection.BeginBinaryImport(command)
-            : await connection.BeginBinaryImportAsync(command, ctk);
+        await using var writer = await connection.BeginBinaryImportAsync(command, ctk);
 
         // The type mapping can be null for obvious types like string.
         var columnTypes = columns.Select(c => GetPostgreSqlType(c, options)).ToArray();
@@ -61,15 +58,7 @@ internal class PostgreSqlBulkInsertProvider(ILogger<PostgreSqlBulkInsertProvider
         long rowsCopied = 0;
         foreach (var entity in entities)
         {
-            if (sync)
-            {
-                // ReSharper disable once MethodHasAsyncOverloadWithCancellation
-                writer.StartRow();
-            }
-            else
-            {
-                await writer.StartRowAsync(ctk);
-            }
+            await writer.StartRowAsync(ctk);
 
             for (var columnIndex = 0; columnIndex < columns.Count; columnIndex++)
             {
@@ -78,47 +67,20 @@ internal class PostgreSqlBulkInsertProvider(ILogger<PostgreSqlBulkInsertProvider
                 // Get the actual type, so that the writer can do the conversation to the target type automatically.
                 var type = columnTypes[columnIndex];
 
-                if (sync)
+                if (type != null)
                 {
-                    if (type != null)
-                    {
-                        // ReSharper disable once MethodHasAsyncOverloadWithCancellation
-                        writer.Write(value, type.Value);
-                    }
-                    else
-                    {
-                        // ReSharper disable once MethodHasAsyncOverloadWithCancellation
-                        writer.Write(value);
-                    }
+                    await writer.WriteAsync(value, type.Value, ctk);
                 }
                 else
                 {
-                    if (type != null)
-                    {
-                        await writer.WriteAsync(value, type.Value, ctk);
-                    }
-                    else
-                    {
-                        await writer.WriteAsync(value, ctk);
-                    }
+                    await writer.WriteAsync(value, ctk);
                 }
             }
 
             options.HandleOnProgress(ref rowsCopied);
         }
 
-        if (sync)
-        {
-            // ReSharper disable once MethodHasAsyncOverloadWithCancellation
-            writer.Complete();
-            // ReSharper disable once MethodHasAsyncOverload
-            writer.Dispose();
-        }
-        else
-        {
-            await writer.CompleteAsync(ctk);
-            await writer.DisposeAsync();
-        }
+        await writer.CompleteAsync(ctk);
     }
 
     private static NpgsqlDbType? GetPostgreSqlType(ColumnMetadata column, PostgreSqlBulkInsertOptions options)

@@ -12,7 +12,7 @@ using PhenX.EntityFrameworkCore.BulkInsert.Options;
 namespace PhenX.EntityFrameworkCore.BulkInsert.MySql;
 
 [UsedImplicitly]
-internal class MySqlBulkInsertProvider(ILogger<MySqlBulkInsertProvider> logger) : BulkInsertProviderBase<MySqlServerDialectBuilder, MySqlBulkInsertOptions>(logger)
+internal partial class MySqlBulkInsertProvider(ILogger<MySqlBulkInsertProvider> logger) : BulkInsertProviderBase<MySqlServerDialectBuilder, MySqlBulkInsertOptions>(logger)
 {
     //language=sql
     /// <inheritdoc />
@@ -41,8 +41,8 @@ internal class MySqlBulkInsertProvider(ILogger<MySqlBulkInsertProvider> logger) 
     }
 
     /// <inheritdoc />
-    protected override async Task BulkInsert<T>(
-        bool sync,
+    [Zomp.SyncMethodGenerator.CreateSyncVersion(PreserveCancellationToken = true)]
+    protected override async Task BulkInsertAsync<T>(
         DbContext context,
         TableMetadata tableInfo,
         IEnumerable<T> entities,
@@ -101,14 +101,6 @@ internal class MySqlBulkInsertProvider(ILogger<MySqlBulkInsertProvider> logger) 
 
         var dataReader = new EnumerableDataReader<T>(entities, properties, options);
 
-        if (sync)
-        {
-            // ReSharper disable once MethodHasAsyncOverloadWithCancellation
-            bulkCopy.WriteToServer(dataReader);
-        }
-        else
-        {
-            await bulkCopy.WriteToServerAsync(dataReader, ctk);
-        }
+        await bulkCopy.WriteToServerAsync(dataReader, ctk);
     }
 }

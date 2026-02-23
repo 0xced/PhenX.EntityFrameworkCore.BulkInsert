@@ -19,4 +19,5 @@
     <Project Path="tests/PhenX.EntityFrameworkCore.BulkInsert.Benchmark/PhenX.EntityFrameworkCore.BulkInsert.Benchmark.csproj" />
     <Project Path="tests/PhenX.EntityFrameworkCore.BulkInsert.Tests/PhenX.EntityFrameworkCore.BulkInsert.Tests.csproj" />
   </Folder>
+  <Project Path="../sync-method-generator/src/Zomp.SyncMethodGenerator/Zomp.SyncMethodGenerator.csproj" />
 </Solution>

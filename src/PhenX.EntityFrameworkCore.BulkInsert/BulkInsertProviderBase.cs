@@ -144,15 +144,33 @@ internal abstract class BulkInsertProviderBase<TDialect, TOptions>(ILogger? logg
         activity?.AddTag("tempTable", tempTableRequired);
         activity?.AddTag("synchronous", sync);
 
-        await BulkInsert(sync, context, tableInfo, entities, tableName, columns, options, ctk);
+        if (sync)
+        {
+            BulkInsert(context, tableInfo, entities, tableName, columns, options, ctk);
+        }
+        else
+        {
+            await BulkInsertAsync(context, tableInfo, entities, tableName, columns, options, ctk);
+        }
         return tableName;
     }
 
     /// <summary>
     /// The main bulk insert method: will insert either in a temp table or directly in the target table.
     /// </summary>
-    protected abstract Task BulkInsert<T>(
-        bool sync,
+    protected abstract void BulkInsert<T>(
+        DbContext context,
+        TableMetadata tableInfo,
+        IEnumerable<T> entities,
+        string tableName,
+        IReadOnlyList<ColumnMetadata> columns,
+        TOptions options,
+        CancellationToken ctk) where T : class;
+
+    /// <summary>
+    /// The main bulk insert async method: will insert either in a temp table or directly in the target table.
+    /// </summary>
+    protected abstract Task BulkInsertAsync<T>(
         DbContext context,
         TableMetadata tableInfo,
         IEnumerable<T> entities,

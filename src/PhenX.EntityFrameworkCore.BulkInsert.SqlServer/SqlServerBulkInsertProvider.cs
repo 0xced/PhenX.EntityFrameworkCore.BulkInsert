@@ -10,7 +10,7 @@ using PhenX.EntityFrameworkCore.BulkInsert.Metadata;
 namespace PhenX.EntityFrameworkCore.BulkInsert.SqlServer;
 
 [UsedImplicitly]
-internal class SqlServerBulkInsertProvider(ILogger<SqlServerBulkInsertProvider>? logger) : BulkInsertProviderBase<SqlServerDialectBuilder, SqlServerBulkInsertOptions>(logger)
+internal partial class SqlServerBulkInsertProvider(ILogger<SqlServerBulkInsertProvider>? logger) : BulkInsertProviderBase<SqlServerDialectBuilder, SqlServerBulkInsertOptions>(logger)
 {
     //language=sql
     /// <inheritdoc />
@@ -26,8 +26,8 @@ internal class SqlServerBulkInsertProvider(ILogger<SqlServerBulkInsertProvider>?
     };
 
     /// <inheritdoc />
-    protected override async Task BulkInsert<T>(
-        bool sync,
+    [Zomp.SyncMethodGenerator.CreateSyncVersion(PreserveCancellationToken = true)]
+    protected override async Task BulkInsertAsync<T>(
         DbContext context,
         TableMetadata tableInfo,
         IEnumerable<T> entities,
@@ -81,14 +81,6 @@ internal class SqlServerBulkInsertProvider(ILogger<SqlServerBulkInsertProvider>?
 
         var dataReader = new EnumerableDataReader<T>(entities, columns, options);
 
-        if (sync)
-        {
-            // ReSharper disable once MethodHasAsyncOverloadWithCancellation
-            bulkCopy.WriteToServer(dataReader);
-        }
-        else
-        {
-            await bulkCopy.WriteToServerAsync(dataReader, ctk);
-        }
+        await bulkCopy.WriteToServerAsync(dataReader, ctk);
     }
 }

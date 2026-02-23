@@ -13,7 +13,7 @@ using PhenX.EntityFrameworkCore.BulkInsert.Options;
 namespace PhenX.EntityFrameworkCore.BulkInsert.Sqlite;
 
 [UsedImplicitly]
-internal class SqliteBulkInsertProvider(ILogger<SqliteBulkInsertProvider>? logger) : BulkInsertProviderBase<SqliteDialectBuilder, BulkInsertOptions>(logger)
+internal partial class SqliteBulkInsertProvider(ILogger<SqliteBulkInsertProvider>? logger) : BulkInsertProviderBase<SqliteDialectBuilder, BulkInsertOptions>(logger)
 {
     private const int MaxParams = 1000;
 
@@ -125,8 +125,8 @@ internal class SqliteBulkInsertProvider(ILogger<SqliteBulkInsertProvider>? logge
     }
 
     /// <inheritdoc />
-    protected override async Task BulkInsert<T>(
-        bool sync,
+    [Zomp.SyncMethodGenerator.CreateSyncVersion(PreserveCancellationToken = true)]
+    protected override async Task BulkInsertAsync<T>(
         DbContext context,
         TableMetadata tableInfo,
         IEnumerable<T> entities,
@@ -164,7 +164,7 @@ internal class SqliteBulkInsertProvider(ILogger<SqliteBulkInsertProvider>? logge
                             batchSize);
 
                     FillValues(chunk, insertCommand.Parameters, columns, options);
-                    await ExecuteCommand(sync, insertCommand, ctk);
+                    await insertCommand.ExecuteNonQueryAsync(ctk);
                 }
                 // Last chunk
                 else
@@ -179,7 +179,7 @@ internal class SqliteBulkInsertProvider(ILogger<SqliteBulkInsertProvider>? logge
                             chunk.Length);
 
                     FillValues(chunk, partialInsertCommand.Parameters, columns, options);
-                    await ExecuteCommand(sync, partialInsertCommand, ctk);
+                    await partialInsertCommand.ExecuteNonQueryAsync(ctk);
                 }
 
                 // Notify progress after each chunk
@@ -198,18 +198,6 @@ internal class SqliteBulkInsertProvider(ILogger<SqliteBulkInsertProvider>? logge
         }
     }
 
-    private static async Task ExecuteCommand(bool sync, DbCommand insertCommand, CancellationToken ctk)
-    {
-        if (sync)
-        {
-            // ReSharper disable once MethodHasAsyncOverloadWithCancellation
-            insertCommand.ExecuteNonQuery();
-        }
-        else
-        {
-            await insertCommand.ExecuteNonQueryAsync(ctk);
-        }
-    }
 
     private static void FillValues<T>(
         T[] chunk,

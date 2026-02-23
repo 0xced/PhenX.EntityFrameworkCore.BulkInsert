@@ -26,6 +26,7 @@
     <ItemGroup Label="Package References">
         <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All"/>
         <PackageReference Include="JetBrains.Annotations" Version="2025.2.4" />
+        <ProjectReference Include="..\..\..\sync-method-generator\src\Zomp.SyncMethodGenerator\Zomp.SyncMethodGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     </ItemGroup>
 
 </Project>
